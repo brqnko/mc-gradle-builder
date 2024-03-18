@@ -1,8 +1,9 @@
 use std::io::{self, stdout, BufReader, Read, Write};
 use std::env;
-use std::fs::{copy, create_dir_all, read_to_string, write, File};
+use std::fs::{copy, create_dir_all, read_to_string, write, File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::slice::Windows;
 use serde_json::{self, from_str, Map, Value};
 use zip::ZipArchive;
 
@@ -129,7 +130,8 @@ fn main() {
     println!("Starting mc-gradle-builder...");
 
     let mut version_input = String::new();
-    let mut directory_input = String::new();
+    let mut package_name_input = String::new();
+    let mut project_name_input = String::new();
 
     println!("Getting operating system...");
     let os = get_os();
@@ -139,11 +141,17 @@ fn main() {
 
     let versions = minecraft.join("versions");
 
-    // Get a directory from terminal TODO
-    print!("Enter a directory< ");
+    // Get a project name from terminal
+    print!("Enter a project name< ");
     stdout().flush().unwrap();
-    io::stdin().read_line(&mut directory_input).unwrap();
-    directory_input = directory_input.replace("\n", "");
+    io::stdin().read_line(&mut project_name_input).unwrap();
+    project_name_input = project_name_input.replace("\n", "");
+
+    // Get a package name from terminal
+    print!("Enter a package name(Ex: com.example)< ");
+    stdout().flush().unwrap();
+    io::stdin().read_line(&mut package_name_input).unwrap();
+    package_name_input = package_name_input.replace("\n", "");
 
     // Get a Minecraft version from terminal
     print!("Enter a Minecraft version< ");
@@ -168,28 +176,52 @@ fn main() {
     // Execute commands
     {
         println!("Creating directory_input directory...");
-        Command::new("mkdir").arg(&directory_input).output().unwrap();
-        std::env::set_current_dir(&directory_input).unwrap();
+        create_dir_all(&project_name_input).unwrap();
+        std::env::set_current_dir(&project_name_input).unwrap();
         
         println!("Initializing gradle project...");
-        Command::new("gradle").arg("init").arg("--type").arg("java-application").output().unwrap();
+
+        if let OS::Windows = os {
+            Command::new("cmd")
+                .arg("gradle")
+                .arg("init")
+                .arg("--type")
+                .arg("java-application")
+                .arg("--dsl")
+                .arg("groovy")
+                .arg("--test-framework")
+                .arg("junit")
+                .arg("--package")
+                .arg(&package_name_input)
+                .output()
+                .unwrap();
+        } else {
+            Command::new("gradle")
+                .arg("init")
+                .arg("--type")
+                .arg("java-application")
+                .arg("--dsl")
+                .arg("groovy")
+                .arg("--test-framework")
+                .arg("junit")
+                .arg("--package")
+                .arg(&package_name_input)
+                .output()
+                .unwrap();
+        }
     }
+
+    std::env::set_current_dir("app").unwrap();
 
     println!("Creating gradle.build");
 
     // Create a new String for gradle script
     let mut gradle_script = String::new();
 
-    // Add plugins for java application
-    gradle_script.push_str("apply plugin: 'java'\n");
-    gradle_script.push_str("apply plugin: 'application'\n");
-
     // Add dependencies
-    {
-        gradle_script.push_str("dependencies {\n");
-        gradle_script.push_str("    implementation fileTree('runs/libraries')\n");
-        gradle_script.push_str("}\n");
-    }
+    gradle_script.push_str("dependencies {\n");
+    gradle_script.push_str("    implementation fileTree('runs/libraries')\n");
+    gradle_script.push_str("}\n");
 
     // Add java version
     gradle_script.push_str(format!("sourceCompatibility = {}\n", version_json.java_version).as_str());
@@ -204,7 +236,12 @@ fn main() {
     gradle_script.push_str("}\n");
 
     // Rewrite build.gradle
-    write("build.gradle", gradle_script).unwrap();
+    OpenOptions::new()
+        .append(true)
+        .open("build.gradle")
+        .unwrap()
+        .write_all(gradle_script.as_bytes())
+        .unwrap();
 
     // Wrhite .gitignore
     write(".gitignore", "/runs").unwrap();
@@ -310,12 +347,10 @@ fn get_os() -> OS {
 }
 
 fn get_minecraft_dir(os: &OS) -> PathBuf {
-    let user_home = env::var("HOME").unwrap();
-
     match os {
-        OS::Windows => PathBuf::from(user_home).join(".minecraft"),
-        OS::OSX => PathBuf::from(user_home).join("Library/Application Support/minecraft"),
-        OS::Linux => PathBuf::from(user_home).join(".minecraft"),
+        OS::Windows => PathBuf::from(env::var("%appdata%").unwrap()).join(".minecraft"),
+        OS::OSX => PathBuf::from(env::var("HOME").unwrap()).join("Library/Application Support/minecraft"),
+        OS::Linux => PathBuf::from(env::var("HOME").unwrap()).join(".minecraft"),
     }
 }
 
