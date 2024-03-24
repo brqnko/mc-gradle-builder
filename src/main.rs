@@ -3,7 +3,6 @@ use std::env;
 use std::fs::{copy, create_dir_all, read_to_string, write, File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::slice::Windows;
 use serde_json::{self, from_str, Map, Value};
 use zip::ZipArchive;
 
@@ -145,19 +144,19 @@ fn main() {
     print!("Enter a project name< ");
     stdout().flush().unwrap();
     io::stdin().read_line(&mut project_name_input).unwrap();
-    project_name_input = project_name_input.replace("\n", "");
+    project_name_input = reformat_terminal_input(&project_name_input);
 
     // Get a package name from terminal
     print!("Enter a package name(Ex: com.example)< ");
     stdout().flush().unwrap();
     io::stdin().read_line(&mut package_name_input).unwrap();
-    package_name_input = package_name_input.replace("\n", "");
+    package_name_input = reformat_terminal_input(&package_name_input);
 
     // Get a Minecraft version from terminal
     print!("Enter a Minecraft version< ");
     stdout().flush().unwrap();
     io::stdin().read_line(&mut version_input).unwrap();
-    version_input = version_input.replace("\n", "");
+    version_input = reformat_terminal_input(&version_input);
 
     // Get version folder
     let version = versions.join(&version_input);
@@ -183,6 +182,7 @@ fn main() {
 
         if let OS::Windows = os {
             Command::new("cmd")
+                .arg("/c")
                 .arg("gradle")
                 .arg("init")
                 .arg("--type")
@@ -335,6 +335,10 @@ fn main() {
     }
 }
 
+fn reformat_terminal_input(raw: &String) -> String {
+    raw.replace("\n", "").replace("\r", "")
+}
+
 fn get_os() -> OS {
     let os_name = env::consts::OS.to_string().to_lowercase();
 
@@ -348,7 +352,7 @@ fn get_os() -> OS {
 
 fn get_minecraft_dir(os: &OS) -> PathBuf {
     match os {
-        OS::Windows => PathBuf::from(env::var("%appdata%").unwrap()).join(".minecraft"),
+        OS::Windows => PathBuf::from(env::var("appdata").unwrap()).join(".minecraft"),
         OS::OSX => PathBuf::from(env::var("HOME").unwrap()).join("Library/Application Support/minecraft"),
         OS::Linux => PathBuf::from(env::var("HOME").unwrap()).join(".minecraft"),
     }
